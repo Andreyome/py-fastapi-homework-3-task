@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, field_validator, constr
+from pydantic import BaseModel, EmailStr
 
 from database import accounts_validators
 
