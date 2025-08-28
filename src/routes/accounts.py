@@ -42,7 +42,6 @@ from security.passwords import (
     verify_password,
 )
 
-from security.crud import get_user_by_email, create_user
 
 from exceptions.security import TokenExpiredError
 
@@ -54,12 +53,28 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 @router.post("/register/", response_model=UserRegistrationResponseSchema, status_code=status.HTTP_201_CREATED)
 async def register(user: UserRegistrationRequestSchema, db: AsyncSession = Depends(get_db)):
     try:
-        db_user = await get_user_by_email(db, user.email)
-        if db_user:
-            raise HTTPException(status_code=409, detail=f"A user with this email {db_user.email} already exists.")
-        new_user = await create_user(db, user)
+        result = await db.execute(select(UserModel).where(UserModel.email == user.email))
+        existing_user = result.scalars().first()
+        if existing_user :
+            raise HTTPException(status_code=409, detail=f"A user with this email {existing_user .email} already exists.")
+        # Create new user
+        db_user = UserModel(
+            email=user.email,
+            group_id=2,  # default group
+        )
+        db_user.password = user.password  # use setter for hashing
 
-        return UserRegistrationResponseSchema(id=new_user.id, email=new_user.email)
+        db.add(db_user)
+        await db.flush()  # assign ID before creating activation token
+
+        # Create activation token
+        activation_token = ActivationTokenModel(user_id=db_user.id)
+        db.add(activation_token)
+
+        await db.commit()
+        await db.refresh(db_user)
+
+        return UserRegistrationResponseSchema(id=db_user.id, email=db_user.email)
     except SQLAlchemyError:
         await db.rollback()
         raise HTTPException(
@@ -79,7 +94,8 @@ async def login(
         db: AsyncSession = Depends(get_db),
         jwt_manager: JWTAuthManagerInterface = Depends(get_jwt_auth_manager)
 ):
-    db_user = await get_user_by_email(db, login_data.email)
+    result = await db.execute(select(UserModel).where(UserModel.email == login_data.email))
+    db_user = result.scalars().first()
     if not db_user or not db_user.verify_password(login_data.password):
         raise HTTPException(status_code=401, detail="Invalid email or password.")
     if not db_user.is_active:
