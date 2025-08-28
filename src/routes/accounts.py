@@ -42,7 +42,6 @@ from security.passwords import (
     verify_password,
 )
 
-
 from exceptions.security import TokenExpiredError
 
 router = APIRouter()
@@ -55,19 +54,19 @@ async def register(user: UserRegistrationRequestSchema, db: AsyncSession = Depen
     try:
         result = await db.execute(select(UserModel).where(UserModel.email == user.email))
         existing_user = result.scalars().first()
-        if existing_user :
-            raise HTTPException(status_code=409, detail=f"A user with this email {existing_user .email} already exists.")
-        # Create new user
+        if existing_user:
+            raise HTTPException(
+                status_code=409,
+                detail=f"A user with this email {existing_user.email} already exists.")
         db_user = UserModel(
             email=user.email,
-            group_id=2,  # default group
+            group_id=2,
         )
-        db_user.password = user.password  # use setter for hashing
+        db_user.password = user.password
 
         db.add(db_user)
-        await db.flush()  # assign ID before creating activation token
+        await db.flush()
 
-        # Create activation token
         activation_token = ActivationTokenModel(user_id=db_user.id)
         db.add(activation_token)
 
