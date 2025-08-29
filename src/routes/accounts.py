@@ -50,19 +50,20 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 
 @router.post("/register/", response_model=UserRegistrationResponseSchema, status_code=status.HTTP_201_CREATED)
-async def register(user: UserRegistrationRequestSchema, db: AsyncSession = Depends(get_db)):
+async def register(user_data: UserRegistrationRequestSchema, db: AsyncSession = Depends(get_db)):
     try:
-        result = await db.execute(select(UserModel).where(UserModel.email == user.email))
+        result = await db.execute(select(UserModel).where(UserModel.email == user_data.email))
         existing_user = result.scalars().first()
         if existing_user:
             raise HTTPException(
                 status_code=409,
-                detail=f"A user with this email {existing_user.email} already exists.")
+                detail=f"A user with this email {user_data.email} already exists.")
         db_user = UserModel(
-            email=user.email,
-            group_id=2,
+            email=user_data.email,
+            group_id=UserGroupEnum.USER,
+            is_active=False,
         )
-        db_user.password = user.password
+        db_user.password = user_data.password
 
         db.add(db_user)
         await db.flush()
@@ -95,7 +96,7 @@ async def login(
 ):
     result = await db.execute(select(UserModel).where(UserModel.email == login_data.email))
     db_user = result.scalars().first()
-    if not db_user or not db_user.verify_password(login_data.password):
+    if not db_user or not verify_password(login_data.password, db_user._hashed_password):
         raise HTTPException(status_code=401, detail="Invalid email or password.")
     if not db_user.is_active:
         raise HTTPException(status_code=403, detail="User account is not activated.")
